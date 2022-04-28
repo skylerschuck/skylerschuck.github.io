@@ -1,0 +1,394 @@
+<!DOCTYPE HTML>
+<!--
+	Solid State by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>Skyler Schuck</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+		<noscript><link rel="stylesheet" href="assets/css/noscript.css" /></noscript>
+	</head>
+	<body class="is-preload">
+
+		<!-- Page Wrapper -->
+			<div id="page-wrapper">
+
+				<!-- Header -->
+					<header id="header" class="alt">
+						<h1><a href="index.html">Colorado Housing Burden</a></h1>
+						<nav>
+							<a href="#menu">Menu</a>
+						</nav>
+					</header>
+
+				<!-- Menu -->
+                    <nav id="menu">
+                        <div class="inner">
+                            <h2>Menu</h2>
+                            <ul class="links">
+                                <li><a href="index.html">Home</a></li>
+                                <li><a href="resume.html">Resume/CV</a></li>
+                                <li><a href="projects.html">Research & Projects</a></li>
+                            </ul>
+                            <a href="#" class="close">Close</a>
+                        </div>
+                    </nav>
+
+				<!-- Banner -->
+
+					<section id="banner">
+						<div class="inner">
+							<h2>Water Resource Optimization with Monte Carlo Simulation</h2>
+					</section>
+
+				<!-- Wrapper -->
+					<section id="wrapper">
+
+						<!-- Four -->
+							<section id="four" class="wrapper alt style1">
+								<div class="inner">
+									<h2 class="major">An application of R Shiny</h2>
+                                    <p>This is an R Shiny App I made for a class project in AREC-542 (Applied Advanced Water Resource Economics).
+									   The model is a Monte Carlo simulation of randomized water inflows across a 2-year period for a water system with 3 users.
+									   Each user has their own utility function that finds how much utility is generated for them based on the amount of water
+									   that is diverted to them in a given year. There is also a reservoir in the system which can store inflows from year one 
+									   for year two (in case a user has more utility for water diversions in year two or if there is too much inflows in year one).
+									   Each user is allocated an amount of water the maximizes utility across the system.
+									   The app will generate between 50 and 200 randomized 2-year periods with a mean inflow and standard deviation, which are all able 
+									   to be adjusted by the app user.
+                                     </p>
+									 <p> 
+										 Each 2-year period is optimized using Constrained Lagrange Minimization with the <i>alabama</i> package with the <i>auglag</i> function.
+										 Once each year is optimized, the results are added to a results matrix. After user-defined number of scenarios are optimized
+										 the results matrix is analyzed to find the maximum, minimum, and average amount of water diverted each user and the reservoir each of 
+										 the two years and displayed in "Summary Table". The results matrix is viewable/downloadable in the "Simulation Table". Additional histograms are generated to provide visualizations of the distibution 
+										 of outcomes.  
+									 </p>
+                                    <iframe src="https://skylerschuck.shinyapps.io/Lab2-542/" frameborder="0" class="special" width="100%" height="800"></iframe>
+                                    <h3>Here's the code:</h3>
+									<pre><code style="font-size:15px;">library(tidycensus)
+library(shiny)
+library(shinythemes)
+library(waiter)
+library(alabama)
+library(tidyverse)
+library(DT)
+library(htmltools)
+library(htmlwidgets)
+
+ui <- fluidPage(
+  autoWaiter(),
+  theme = shinytheme("cosmo"),
+  
+  headerPanel("Lab 2 - AREC 542 - Skyler Schuck"),
+  # Application title
+
+  # Sidebar 
+  sidebarLayout(
+    sidebarPanel(
+      width = "3",
+      numericInput("returnflow", "Return Flow (Percent as Decimal)", 0.5,
+                   min = 0, max = 1 , step = 0.01), 
+      numericInput("wbar", "AVerage Inflow",
+                   min = 0, value = 200, step = 1),
+      numericInput("wsigma", "Inflow Variance",
+                   min = 0, value = 20, step = 1),
+      numericInput("rbar", "Initial Reservoir Level",
+                   min = 0, value = 0, step = 1),
+      numericInput("rcapacity", "Reservoir Capacity",
+                   min = 0, value = 0, step = 1),
+      sliderInput("iterations", "Number of Iterations in Monte Carlo Simulation",
+                   min = 50, max = 200 ,value=100, step = 25, width = "100%"),
+      actionButton("trigger", "Apply Changes")
+    ),
+    
+    mainPanel(
+      h2("Monte Carlo Simulation across two years."),
+      tags$label(h3('Status/Output')), # Status/Output Text Box
+      verbatimTextOutput('contents'),
+      fluidRow(
+        splitLayout(cellWidths = c("33%", "33%","34%"), plotOutput("plotgraph1"), 
+		plotOutput("plotgraph2"), plotOutput("plotgraph3"))
+      ),
+      fluidRow(
+        splitLayout(downloadButton("downloadData1", "Download Summary Table"),
+		downloadButton("downloadData2", "Download Simulation Data")
+)  
+      ),
+      tabsetPanel(
+        id = 'data',
+        tabPanel("Summary Table", dataTableOutput("allocationtable")),
+        tabPanel("Simulation Table", dataTableOutput("simulations"))
+        
+        
+      )
+      
+    )
+  )
+)
+
+server <- function(input, output) {
+  
+  output$contents <- renderPrint({
+    if (input$trigger>0) { 
+      isolate("Calculation complete.")
+    } else {
+      return("Server is ready for calculation.")
+    }
+  })
+  
+  output$plotgraph1 <- renderPlot({
+    if(input$trigger>0){
+      Sys.sleep(1)
+      dat <- myfunc()
+      graph <- ggplot(data = dat, aes(x = r1)) + geom_histogram(bins = 16)+
+	  ggtitle("Distribution of Year 1 Storage") + xlab("Storage Amount")
+      isolate(graph)
+    }
+  })
+  output$plotgraph2 <- renderPlot({
+    if(input$trigger>0){
+      Sys.sleep(1)
+      dat <- myfunc()
+      graph <- ggplot(data = dat, aes(x = r2)) + geom_histogram(bins = 16)+
+	           ggtitle("Distribution of Year 2 Storage") + xlab("Storage Amount")
+      isolate(graph)
+    }
+  })
+  output$plotgraph3 <- renderPlot({
+    if(input$trigger>0){
+      Sys.sleep(1)
+      dat <- myfunc()
+      graph <- ggplot(data = dat, aes(x = system_value)) + geom_histogram(bins = 16)+
+	        ggtitle("Distribution of System Value") + xlab("System Value")
+      isolate(graph)
+    }
+  })
+  
+  myfunc <- eventReactive(input$trigger, {
+        if(input$trigger > 0){
+              iterations <- input$iterations
+              average <- input$wbar
+              variance <- input$wsigma
+              alpha1  <- input$returnflow #return flows
+              rbar <- input$rbar #Initial Reservoir Size
+              rcapacity <- input$rcapacity #Initial Reservoir Size
+              
+              rnd.nums_1 <- rnorm(iterations,average,variance)
+              rnd.nums_2 <- rnorm(iterations,average,variance)
+              #Making a matrix to put out data
+              results_data <- data.frame(matrix(ncol = 13,nrow = 0))
+              colnames(results_data) <- c("system_value" ,
+					 "W1",
+					 "W2", 
+					 "q11",
+					 "q21",
+					 "q31",
+					 "q12",
+					 "q22",
+					 "q32",
+					 "s1",
+					 "s2",
+					 "r1",
+					 "r2")
+      
+              
+              #defining how many times to run monte carlo. Because R starts counting at 1 and not 0 
+			  #(like a normal programming language) I have to add 1 so it does the process n times 
+			  #and not n-1 times.
+
+              len = iterations+1
+              i=1
+              
+              
+              while (i< len) {
+                
+                wbar_1 <- rnd.nums_1[i] #Year 1 generated inflows 
+                wbar_2 <- rnd.nums_2[i] #Year 2 generated inflows
+				
+				
+                # Building the Social Planner's Problem -----------------------------------
+                
+                
+                fn2 <- function(x){
+                  val <- ((1200*x[1])-(x[1]^2)) + ((1200*x[4])-(x[4]^2)) + ((4400*x[2])-2*(x[2]^2)) +
+				  ((4400*x[5])-2*(x[5]^2)) + ((500*x[3])-0.5*(x[5]^2))+((1000*x[6])-0.5*(x[6]^2))
+                  return(-val) 
+                  #The value is negative because algorithm does minimization, but we want to maximize. So we want the "biggest"
+		  #negative value.
+                }
+                
+                # Defining the Inequality Constraints & the Non-negativity Constraints -------------------------------------
+                
+                
+                hin2 <- function(x){
+                  constraints <- c(
+                    wbar_1-x[7],
+                    wbar_1-x[7]-x[1],
+                    wbar_1-x[7]-x[1]-x[2],
+                    wbar_1-x[7]-x[1]+(alpha1 * x[1])-x[2]-x[3],
+                    wbar_2-x[8],
+                    wbar_2-x[8]-x[4],
+                    wbar_2-x[8]-x[4]-x[5],
+                    wbar_2-x[8]-x[4]+(alpha1 * x[4])-x[5]-x[6],
+                    x[1],
+                    x[2],
+                    x[3],
+                    x[4],
+                    x[5],
+                    x[6],
+                    x[9],
+                    x[10],
+                    rcapacity - x[9],
+                    rcapacity - x[10]
+                  )
+                  return(constraints)
+                }
+                
+                # Defining the equality constraints --------------------------------------------------
+                
+                heq2 <- function(x){
+                  constraints <- c(
+                    x[9]-rbar-x[7],
+                    x[10]-x[9]-x[8]
+                  )
+                  return(constraints)
+                }
+                
+                
+                # Tells the Algorithm where to start --------------------------------------------------
+                par2 <- c(1,1,1,1,1,1,0,0,0,0)
+                
+                
+                # Building the optimization function --------------------------------------
+                
+                spp2 <- auglag(
+                  par = par2,
+                  fn = fn2,
+                  hin = hin2,
+                  heq = heq2,
+                  control.outer = list(trace = FALSE)
+                  
+                )
+                
+                p2results <- round(spp2$par, digits = 2)
+                results_data[nrow(results_data)+1, ] <- c(-(spp2$value) ,wbar_1,wbar_2,p2results)
+                i=i+1 #Iterating to move on to the next set of inflows
+              }
+              return(results_data)
+        }
+  })
+  
+  summarytable <-  reactive({
+    results_data <- myfunc()
+    mymax <- results_data %>% summarise_all(max) %>% round(digits = 2)
+    
+    
+    mymean <- results_data %>% summarise_all(mean) %>% round(digits = 2)
+    
+    
+    mymedian <- results_data %>% summarise_all(median) %>% round(digits = 2)
+    
+    myvar <- results_data %>% summarise_all(var) %>% round(digits = 2)
+    
+    sumstats <- rbind(mymax,mymean,mymedian,myvar)
+    
+    row.names(sumstats) <- c("Max", "Mean", "Median", "Variance")
+    
+    isolate(sumstats)
+  })
+  
+  simulationtable <- reactive({
+    results_data <- myfunc()
+    colnames(results_data) <- c("System Value" ,
+								"Year 1 Inflow",
+								"Year 2 Inflow", 
+								"q11",
+								"q21",
+								"q31",
+								"q12",
+								"q22",
+								"q32",
+								"Y1 Diversion",
+								"Y2 Diversion",
+								"Y1 Reservoir Lvl",
+								"Y2 Reservoir Lvl")
+    isolate(results_data)
+  })
+  
+  
+  output$allocationtable <- renderDataTable({
+    dat <- summarytable()
+    isolate(dat)
+  })
+  
+  output$simulations <- renderDataTable({
+    dat <- simulationtable()
+    isolate(dat)
+    
+  })
+  
+  
+  
+  output$downloadData1 <- downloadHandler(
+        filename = function() {
+          paste("summary_table_output-", Sys.Date(), ".csv", sep="")
+        },
+        content = function(file) {
+          write.csv(summarytable(), file)
+        }
+  )
+  output$downloadData2 <- downloadHandler(
+    filename = function() {
+      paste("simulation_data_output-", Sys.Date(), ".csv", sep="")
+    },
+    content = function(file) {
+      write.csv(simulationtable(), file)
+    }
+  )
+  
+  
+
+
+
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+									</code></pre>
+                                </div>
+					        </section>
+
+				<!-- Footer -->
+					<section id="footer">
+						<div class="inner">
+							<h2 class="major">Get in touch</h2>
+							<ul class="contact">
+								<li class="icon solid fa-home">
+									Fort Collins, CO
+								</li>
+								<li class="icon solid fa-envelope"><a href="mailto:skyler.schuck@colostate.edu">skyler.schuck@colostate.edu</a></li>
+							</ul>
+							<ul class="contact">
+								<li class="icon brands fa-linkedin"><a href="https://www.linkedin.com/in/skyler-schuck/">LinkedIn</a></li>
+								<li class="icon brands fa-github"><a href="https://github.com/skylerschuck">GitHub</a></li>
+							</ul>
+						</div>
+					</section>
+
+			</div>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/jquery.scrollex.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+
+	</body>
+</html>
